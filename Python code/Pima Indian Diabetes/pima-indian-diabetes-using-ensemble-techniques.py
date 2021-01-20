@@ -56,8 +56,8 @@ def feature_Selection(data, selector, n_feature):
         X_train_selected = X_train.iloc[:,cols]
         # print(X_train_selected.columns)
         return X_train_selected,Y_train
-    if selector  == 'None':
-        return data.iloc[:,:8].values, data.iloc[:,8:].values
+    # if selector  == 'None':
+    #     return data.iloc[:,:8].values, data.iloc[:,8:].values
     if selector=='PCA':
         X_Data= data.iloc[:,:8].values
         pca = PCA(n_components=n_feature)
@@ -69,6 +69,7 @@ def feature_Selection(data, selector, n_feature):
         if n_feature ==6:
             data.drop(['BloodPressure','Age'],axis=1,inplace=True)
         return data.iloc[:,:6].values, data.iloc[:,6:].values
+    return data.iloc[:,:8].values, data.iloc[:,8:].values
 def replace_zero(data, col, target):
 
     mean_by_target = data.loc[data[col] != 0, [col, target]].groupby(target).mean()
@@ -213,6 +214,7 @@ def model_Ensemble(n_model, X_Train, Y_Train, X_Test, Y_Test, weight):
             model = VotingClassifier( [models[i] for i in model_index] , voting='soft')
             model.fit(X_Train,Y_Train)
             return model
+    return None
 def Make_model_seq(activation,dropout_rate,init,learn_rate):
 
     neuron1,neuron2,neuron3,neuron4=64,16,64,64

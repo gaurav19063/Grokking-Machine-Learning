@@ -2,16 +2,11 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import cross_val_score
-from sklearn.ensemble import RandomForestClassifier as RFC
-from sklearn.metrics import make_scorer, accuracy_score, precision_score, recall_score, f1_score,matthews_corrcoef
+from sklearn.model_selection import cross_val_score, cross_validate, train_test_split, GridSearchCV, KFold, StratifiedKFold, RepeatedStratifiedKFold,GridSearchCV, RandomizedSearchCV
+from sklearn.metrics import make_scorer, accuracy_score, precision_score, recall_score, f1_score,matthews_corrcoef, roc_curve, auc, accuracy_score,roc_auc_score,classification_report,f1_score, confusion_matrix
 import numpy as np
-from sklearn.model_selection import cross_validate
 from imblearn.over_sampling import RandomOverSampler
 from collections import Counter
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report,f1_score
-from sklearn.model_selection import GridSearchCV
 from sklearn.svm import SVC
 from sklearn.feature_selection import SelectKBest, chi2
 from imblearn.over_sampling import RandomOverSampler
@@ -20,31 +15,16 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import AdaBoostClassifier,RandomForestClassifier, GradientBoostingClassifier,VotingClassifier
 from sklearn.neural_network import MLPClassifier
 import xgboost as xgb
-from scipy import stats
 from scipy.stats import uniform, randint
-from sklearn.model_selection import KFold, StratifiedKFold, RepeatedStratifiedKFold
-from sklearn.metrics import roc_curve, auc, accuracy_score,roc_auc_score
-from sklearn import preprocessing
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from scipy import interp
-from sklearn.metrics import confusion_matrix
-from sklearn.decomposition import PCA
-from sklearn.decomposition import FastICA
+from sklearn.decomposition import PCA,FastICA
 from keras.utils import to_categorical
 from sklearn.naive_bayes import GaussianNB
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.wrappers.scikit_learn import KerasClassifier
-from keras.optimizers import Adam
-from keras.utils import to_categorical
-from keras.models import Sequential
-from keras.layers import Dense
+from keras.models import Sequential,Model
 from keras.wrappers.scikit_learn import KerasClassifier
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
-from keras.layers import Activation, Dense, Dropout, BatchNormalization, Input
-from keras.models import Model
-from keras.optimizers import Adam
+from keras.layers import Activation, Dense, Dropout, BatchNormalization, Input,Dense
 import argparse # Load argparser to read input from the user
 from argparse import RawTextHelpFormatter # Import RawTextHelpFormatter used to print helper message
 import warnings
@@ -88,7 +68,7 @@ def feature_Selection(data, selector, n_feature):
     if selector =='corr':
         if n_feature ==6:
             data.drop(['BloodPressure','Age'],axis=1,inplace=True)
-            return data.iloc[:,:6].values, data.iloc[:,6:].values
+        return data.iloc[:,:6].values, data.iloc[:,6:].values
 def replace_zero(data, col, target):
 
     mean_by_target = data.loc[data[col] != 0, [col, target]].groupby(target).mean()
@@ -138,9 +118,10 @@ It creates different models on best parameters and return the model to evaluate.
 
 '''
 def model_Ensemble(n_model, X_Train, Y_Train, X_Test, Y_Test, weight):
-
+    Y_Train=Y_Train.ravel()
+    Y_Test=Y_Test.ravel()
     parameters_rf = {'criterion': ['gini','entropy']}
-
+    # Y_train=Y_Train.ravel()
     mrf = model_creation (classifier = RandomForestClassifier(random_state=random_initializer),X_Train = X_Train,  Y_Train = Y_Train,
                       tuned_parameters = parameters_rf,
                       verbose=0)
@@ -152,6 +133,7 @@ def model_Ensemble(n_model, X_Train, Y_Train, X_Test, Y_Test, weight):
     parameters_knn = [ {'n_neighbors': n_neighbors, 'algorithm' : ['brute'],'p':Distance},{'n_neighbors': n_neighbors, 'algorithm' : ['ball_tree'],'leaf_size' : leaf_size,
                         'p':Distance},{'n_neighbors': n_neighbors, 'algorithm' : ['kd_tree'],'leaf_size' : leaf_size,'p':Distance}]
     parameters_dt = {'criterion': ['gini','entropy'],'splitter': ['best'],'min_samples_split':[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1.0],'min_samples_leaf': [1,2,3,4,5] }
+
     mdt =model_creation (classifier = DecisionTreeClassifier(random_state=random_initializer), X_Train = X_Train,   Y_Train = Y_Train, tuned_parameters = parameters_dt,verbose=0)  #create model with DecisionTree classifier with utility function
 
     mknn = model_creation (classifier = KNeighborsClassifier(),X_Train = X_Train,Y_Train = Y_Train,tuned_parameters = parameters_knn,verbose=0)                         #create knn with  function
@@ -180,7 +162,7 @@ def model_Ensemble(n_model, X_Train, Y_Train, X_Test, Y_Test, weight):
             return model
         if n_model == 3:
             model_index=[0,1,2]
-            model = VotingClassifier( [models[i] for i in model_index] , voting='soft', weights=[accuracy_score(Y_Test, mknn.predict(X_Test)),accuracy_score(Y_Test, mb.predict(X_Test)), accuracy_score(Y_Test, mdt.predict(X_Test))])
+            model = VotingClassifier( [models[i] for i in model_index] , voting='soft', weights=[accuracy_score(Y_Test, mknn.predict(X_Test)),accuracy_score(Y_Test, mab.predict(X_Test)), accuracy_score(Y_Test, mdt.predict(X_Test))])
 
             model.fit(X_Train,Y_Train)
             return model
@@ -302,94 +284,93 @@ def main(path):
   # file = open('final_ensemble_ouput.txt','w')
   # file.write('\n')
   for i in range(2,8):
-      Accuracy = []
-      tprs = []
-      aucs_ens = []
-      sn = []
-      sp = []
-      pr = []
-      FOR = []
-      DOR = []
-      FP = []
-      TN = []
-      FN = []
-      TP = []
+    Accuracy = []
+    tprs = []
+    aucs_ens = []
+    sn = []
+    sp = []
+    pr = []
+    FOR = []
+    DOR = []
+    FP = []
+    TN = []
+    FN = []
+    TP = []
 
-      iterator=0
-      mean_fpr = np.linspace(0, 1, 100)
-      plus_print=n_dots*'#'
-      print(plus_print)
-      print('model running with ensembling model.(No of models used: ---  '+str(i )+' )')
-      print(plus_print)
-      kf = StratifiedKFold(n_splits=5,
-                      shuffle=False,
-                      random_state=random_initializer)
+    iterator=0
+    mean_fpr = np.linspace(0, 1, 100)
+    plus_print=n_dots*'#'
+    print(plus_print)
+    print('model running with ensembling model.(No of models used: ---  '+str(i )+' )')
+    print(plus_print)
+    kf = StratifiedKFold(n_splits=5,
+                  shuffle=False,
+                  random_state=random_initializer)
 
-      for train_index, test_index in kf.split(X_train,Y_train):                    # split data in train,test
-          X_Train, X_Test = X_train[train_index], X_train[test_index]               # the train data and label
-          Y_Train, Y_Test = Y_train[train_index], Y_train[test_index]             # the  test data and label
-
-
-          if i<7:
-            # creating different ensembling models for each fold and finding there performance on the different metrics
-            clf = model_Ensemble( i, X_Train, Y_Train, X_Test, Y_Test, 'None')
-            tn, fp, fn, tp, roc_auc, fpr, tpr = metrics ( Y_Test,  clf.predict(X_Test),clf.predict_proba(X_Test),tprs ,mean_fpr)
-          else:
-            activation="relu"
-            batch_size=8
-            epochs=200
-            learn_rate=.001
-            dropout_rate=0.6
-            init="normal"
-            neuron1,neuron2,neuron3,neuron4=64,16,64,64
-            Y_Train_cat = to_categorical(Y_Train,2)                                #convert train output to catagorical
-            Y_Test_cat= to_categorical(Y_Test,2)                                  #convert test output to catagorical
-
-            model =Make_model_seq(activation, dropout_rate, init,learn_rate)
-            np.random.seed(6)
-            model.fit(x=X_Train,  y=Y_Train_cat,batch_size=batch_size,epochs=epochs,shuffle=False,verbose=1)
-
-            probas_ = model.predict(X_Test)
-            print(type(probas_))
-            print(probas_.shape)
-            y_pred = np.argmax(model.predict(X_Test), axis=1)
-
-            tn, fp, fn, tp, roc_auc, fpr, tpr = metrics ( Y_Test,
-                                              y_pred,
-                                               probas_,tprs,mean_fpr)
+    for train_index, test_index in kf.split(X_train,Y_train):                    # split data in train,test
+      X_Train, X_Test = X_train[train_index], X_train[test_index]               # the train data and label
+      Y_Train, Y_Test = Y_train[train_index], Y_train[test_index]             # the  test data and label
 
 
+      if i<7:
+        # creating different ensembling models for each fold and finding there performance on the different metrics
+        clf = model_Ensemble( i, X_Train, Y_Train, X_Test, Y_Test, 'None')
+        tn, fp, fn, tp, roc_auc, fpr, tpr = metrics ( Y_Test,  clf.predict(X_Test),clf.predict_proba(X_Test),tprs ,mean_fpr)
+      else:
+        activation="relu"
+        batch_size=8
+        epochs=200
+        learn_rate=.001
+        dropout_rate=0.6
+        init="normal"
+        neuron1,neuron2,neuron3,neuron4=64,16,64,64
+        Y_Train_cat = to_categorical(Y_Train,2)                                #convert train output to catagorical
+        Y_Test_cat= to_categorical(Y_Test,2)                                  #convert test output to catagorical
 
-          tprs.append(interp(mean_fpr, fpr, tpr))
-          tprs[-1][0] = 0.0
-          aucs_ens.append(roc_auc)
-          TN.append(tn)
-          FP.append(fp)
-          FN.append(fn)
-          TP.append(tp)
-          FOR.append(fn/(tn+fn))
-          DOR.append((tp*tn)/(fp*fn))
-          sn.append(tp/(tp+fn))
-          sp.append(tn/(fp+tn))
-          pr.append(tp/(tp+fp))
-          Accuracy.append((tp+tn)/(tn+fp+fn+tp))
+        model =Make_model_seq(activation, dropout_rate, init,learn_rate)
+        np.random.seed(6)
+        model.fit(x=X_Train,  y=Y_Train_cat,batch_size=batch_size,epochs=epochs,shuffle=False,verbose=1)
+
+        probas_ = model.predict(X_Test)
+        print(type(probas_))
+        print(probas_.shape)
+        y_pred = np.argmax(model.predict(X_Test), axis=1)
+
+        tn, fp, fn, tp, roc_auc, fpr, tpr = metrics ( Y_Test,
+                                          y_pred,
+                                           probas_,tprs,mean_fpr)
+
+
+
+      tprs.append(interp(mean_fpr, fpr, tpr))
+      tprs[-1][0] = 0.0
+      aucs_ens.append(roc_auc)
+      TN.append(tn)
+      FP.append(fp)
+      FN.append(fn)
+      TP.append(tp)
+      FOR.append(fn/(tn+fn))
+      DOR.append((tp*tn)/(fp*fn))
+      sn.append(tp/(tp+fn))
+      sp.append(tn/(fp+tn))
+      pr.append(tp/(tp+fp))
+      Accuracy.append((tp+tn)/(tn+fp+fn+tp))
 
 
       # Overall performance of ensemble models
-      average_scores(aucs_ens,Accuracy,TP,TN,FP,FN)
-      print("Precision (Avg. ) is  %0.3f " %(np.mean(pr)))
-      print("Sensitivity (Avg. ) is  %0.3f " %(np.mean(sn)))
-      print("Specificity (Avg. ) is  %0.3f " %(np.mean(sp)))
-      print("FOR (Avg.) is  %0.3f " %(np.mean(FOR)))
-      print("DOR (Avg. ) is  %0.3f " %(np.mean(DOR)))
+    average_scores(aucs_ens,Accuracy,TP,TN,FP,FN)
+    print("Precision (Avg. ) is  %0.3f " %(np.mean(pr)))
+    print("Sensitivity (Avg. ) is  %0.3f " %(np.mean(sn)))
+    print("Specificity (Avg. ) is  %0.3f " %(np.mean(sp)))
+    print("FOR (Avg.) is  %0.3f " %(np.mean(FOR)))
+    print("DOR (Avg. ) is  %0.3f " %(np.mean(DOR)))
 
 # command line input from the user
-parser = argparse.ArgumentParser(description='Please provide following arguments',formatter_class=RawTextHelpFormatter)
-parser.add_argument("-i","-I","--input", type=str, required=True, help="Input address of train file")
-args = parser.parse_args() # Take command line input and store in the args object
+# parser = argparse.ArgumentParser(description='Please provide following arguments',formatter_class=RawTextHelpFormatter)
+# parser.add_argument("-i","-I","--input", type=str, required=True, help="Input address of train file")
+# args = parser.parse_args() # Take command line input and store in the args object
 
-path_train= args.input #train file address
-
-
+path_train= "pima-indian-diabetes.csv"
+#train file address
 
 main(path_train)
